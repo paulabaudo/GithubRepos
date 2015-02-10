@@ -59,50 +59,6 @@ public class GithubReposFragment extends Fragment {
         return rootView;
     }
 
-    private String readFullResponse(InputStream inputStream) throws IOException {
-        BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
-        StringBuilder stringBuilder = new StringBuilder();
-        String response = null;
-        String line;
-        while ((line= bufferedReader.readLine()) != null){
-            stringBuilder.append(line).append("\n");
-        }
-        if (stringBuilder.length()>0){
-        response = stringBuilder.toString();
-        }
-        return response;
-    }
-
-    private String parseResponse(String response){
-        final String REPO_NAME = "name";
-        List<String> repos = new ArrayList<>();
-        try {
-            JSONArray responseJsonArray = new JSONArray(response);
-            JSONObject object;
-            for (int i = 0; i < responseJsonArray.length(); i++){
-                object = responseJsonArray.getJSONObject(i);
-                repos.add(object.getString(REPO_NAME));
-            }
-        } catch (JSONException e) {
-            e.printStackTrace();
-        }
-        return TextUtils.join(", ", repos);
-    }
-
-    private URL constructURLQuery(String username) throws MalformedURLException {
-        final String GITHUB_BASE_URL = "api.github.com";
-        final String USERS_PATH = "users";
-        final String REPOS_ENDPOINT = "repos";
-        Uri.Builder builder = new Uri.Builder();
-        builder.scheme("https").authority(GITHUB_BASE_URL).
-                appendPath(USERS_PATH).
-                appendPath(username).
-                appendPath(REPOS_ENDPOINT);
-        Uri uri = builder.build();
-        Log.d(LOG_TAG, "Built URI: " + uri.toString());
-        return new URL(uri.toString());
-    }
-
     class FetchReposTask extends AsyncTask<String, Void, String>{
 
         @Override
@@ -119,7 +75,7 @@ public class GithubReposFragment extends Fragment {
                 HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
                 try {
                     String response = readFullResponse(httpURLConnection.getInputStream());
-                    parseResponse(listOfRepos);
+                    listOfRepos = parseResponse(response);
                 } catch (IOException e){
                     e.printStackTrace();
                 } finally {
@@ -135,6 +91,50 @@ public class GithubReposFragment extends Fragment {
         protected void onPostExecute(String response) {
             super.onPostExecute(response);
             mTextViewRepos.setText(response);
+        }
+
+        private String readFullResponse(InputStream inputStream) throws IOException {
+            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
+            StringBuilder stringBuilder = new StringBuilder();
+            String response = null;
+            String line;
+            while ((line= bufferedReader.readLine()) != null){
+                stringBuilder.append(line).append("\n");
+            }
+            if (stringBuilder.length()>0){
+                response = stringBuilder.toString();
+            }
+            return response;
+        }
+
+        private String parseResponse(String response){
+            final String REPO_NAME = "name";
+            List<String> repos = new ArrayList<>();
+            try {
+                JSONArray responseJsonArray = new JSONArray(response);
+                JSONObject object;
+                for (int i = 0; i < responseJsonArray.length(); i++){
+                    object = responseJsonArray.getJSONObject(i);
+                    repos.add(object.getString(REPO_NAME));
+                }
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+            return TextUtils.join(", ", repos);
+        }
+
+        private URL constructURLQuery(String username) throws MalformedURLException {
+            final String GITHUB_BASE_URL = "api.github.com";
+            final String USERS_PATH = "users";
+            final String REPOS_ENDPOINT = "repos";
+            Uri.Builder builder = new Uri.Builder();
+            builder.scheme("https").authority(GITHUB_BASE_URL).
+                    appendPath(USERS_PATH).
+                    appendPath(username).
+                    appendPath(REPOS_ENDPOINT);
+            Uri uri = builder.build();
+            Log.d(LOG_TAG, "Built URI: " + uri.toString());
+            return new URL(uri.toString());
         }
     }
 }
