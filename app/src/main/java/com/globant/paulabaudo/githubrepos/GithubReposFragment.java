@@ -3,7 +3,8 @@ package com.globant.paulabaudo.githubrepos;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
-import android.support.v4.app.Fragment;
+import android.support.annotation.Nullable;
+import android.support.v4.app.ListFragment;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -13,6 +14,11 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import com.squareup.okhttp.Callback;
+import com.squareup.okhttp.OkHttpClient;
+import com.squareup.okhttp.Request;
+import com.squareup.okhttp.Response;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -31,11 +37,12 @@ import java.util.List;
 /**
  * A placeholder fragment containing a simple view.
  */
-public class GithubReposFragment extends Fragment {
+public class GithubReposFragment extends ListFragment {
 
     EditText mEditTextUsername;
     TextView mTextViewRepos;
     final static String LOG_TAG = GithubReposFragment.class.getSimpleName();
+    GithubRepoAdapter mAdapter;
 
     public GithubReposFragment() {
     }
@@ -44,97 +51,112 @@ public class GithubReposFragment extends Fragment {
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
         View rootView = inflater.inflate(R.layout.fragment_github_repos, container, false);
-        mEditTextUsername = (EditText) rootView.findViewById(R.id.edit_text_username);
-        mTextViewRepos = (TextView) rootView.findViewById(R.id.text_view_repos);
+        wireUpViews(rootView);
+        prepareButton(rootView);
+        return rootView;
+    }
+
+    private void prepareButton(View rootView) {
         Button buttonGetRepos = (Button) rootView.findViewById(R.id.button_get_repos);
         buttonGetRepos.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 String username = mEditTextUsername.getText().toString();
+                displayToast(username);
+                fetchReposInQueue(username);
+            }
+
+            private void displayToast(String username) {
                 String message = String.format(getString(R.string.getting_repos_for_user),username);
                 Toast.makeText(getActivity(), message, Toast.LENGTH_SHORT).show();
-                new FetchReposTask().execute(username);
             }
         });
-        return rootView;
+
     }
 
-    class FetchReposTask extends AsyncTask<String, Void, String>{
+    @Override
+    public void onActivityCreated(@Nullable Bundle savedInstanceState) {
+        super.onActivityCreated(savedInstanceState);
+        prepareListView();
+    }
 
-        @Override
-        protected String doInBackground(String... params) {
-            String username;
-            String listOfRepos = "";
-            if (params.length>0){
-                username = params[0];
-            } else {
-                username = "octocat";
-            }
-            try {
-                URL url = constructURLQuery(username);
-                HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
-                try {
-                    String response = readFullResponse(httpURLConnection.getInputStream());
-                    listOfRepos = parseResponse(response);
-                } catch (IOException e){
+    private void prepareListView() {
+        List<GithubRepo> repos = new ArrayList<>();
+        mAdapter = new GithubRepoAdapter(getActivity(), repos);
+        setListAdapter(mAdapter);
+    }
+
+    private void fetchReposInQueue(String username){
+        try {
+            URL url = constructURLQuery(username);
+            Request request = new Request.Builder().url(url.toString()).build();
+            OkHttpClient client = new OkHttpClient();
+            client.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(Request request, IOException e) {
                     e.printStackTrace();
-                } finally {
-                    httpURLConnection.disconnect();
                 }
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            return listOfRepos;
-        }
 
-        @Override
-        protected void onPostExecute(String response) {
-            super.onPostExecute(response);
-            mTextViewRepos.setText(response);
-        }
-
-        private String readFullResponse(InputStream inputStream) throws IOException {
-            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
-            StringBuilder stringBuilder = new StringBuilder();
-            String response = null;
-            String line;
-            while ((line= bufferedReader.readLine()) != null){
-                stringBuilder.append(line).append("\n");
-            }
-            if (stringBuilder.length()>0){
-                response = stringBuilder.toString();
-            }
-            return response;
-        }
-
-        private String parseResponse(String response){
-            final String REPO_NAME = "name";
-            List<String> repos = new ArrayList<>();
-            try {
-                JSONArray responseJsonArray = new JSONArray(response);
-                JSONObject object;
-                for (int i = 0; i < responseJsonArray.length(); i++){
-                    object = responseJsonArray.getJSONObject(i);
-                    repos.add(object.getString(REPO_NAME));
+                @Override
+                public void onResponse(Response response) throws IOException {
+                    String responseString = response.body().string();
+                    final List<GithubRepo> listOfRepos = parseResponse(responseString);
+                    getActivity().runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            mAdapter.clear();
+                            mAdapter.addAll(listOfRepos);
+                            mAdapter.notifyDataSetChanged();
+                        }
+                    });
                 }
-            } catch (JSONException e) {
-                e.printStackTrace();
-            }
-            return TextUtils.join(", ", repos);
+            });
+        } catch (IOException e) {
+            e.printStackTrace();
         }
 
-        private URL constructURLQuery(String username) throws MalformedURLException {
-            final String GITHUB_BASE_URL = "api.github.com";
-            final String USERS_PATH = "users";
-            final String REPOS_ENDPOINT = "repos";
-            Uri.Builder builder = new Uri.Builder();
-            builder.scheme("https").authority(GITHUB_BASE_URL).
-                    appendPath(USERS_PATH).
-                    appendPath(username).
-                    appendPath(REPOS_ENDPOINT);
-            Uri uri = builder.build();
-            Log.d(LOG_TAG, "Built URI: " + uri.toString());
-            return new URL(uri.toString());
-        }
     }
+
+    private URL constructURLQuery(String username) throws MalformedURLException {
+        final String GITHUB_BASE_URL = "api.github.com";
+        final String USERS_PATH = "users";
+        final String REPOS_ENDPOINT = "repos";
+        Uri.Builder builder = new Uri.Builder();
+        builder.scheme("https").authority(GITHUB_BASE_URL).
+                appendPath(USERS_PATH).
+                appendPath(username).
+                appendPath(REPOS_ENDPOINT);
+        Uri uri = builder.build();
+        Log.d(LOG_TAG, "Built URI: " + uri.toString());
+        return new URL(uri.toString());
+    }
+
+    private List<GithubRepo> parseResponse(String response){
+        final String REPO_NAME = "name";
+        final String REPO_DESC = "description";
+        final String REPO_URL = "html_url";
+        List<GithubRepo> repos = new ArrayList<>();
+        GithubRepo repo;
+        try {
+            JSONArray responseJsonArray = new JSONArray(response);
+            JSONObject object;
+            for (int i = 0; i < responseJsonArray.length(); i++){
+                object = responseJsonArray.getJSONObject(i);
+                repo = new GithubRepo();
+                repo.setName(object.getString(REPO_NAME));
+                repo.setDescription(object.getString(REPO_DESC));
+                repo.setUrl(object.getString(REPO_URL));
+                repos.add(repo);
+            }
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        return repos;
+    }
+
+    private void wireUpViews(View rootView) {
+        mEditTextUsername = (EditText) rootView.findViewById(R.id.edit_text_username);
+        mTextViewRepos = (TextView) rootView.findViewById(R.id.text_view_repos);
+    }
+
 }
